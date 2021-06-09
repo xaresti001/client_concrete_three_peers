@@ -64,12 +64,18 @@ struct OperationIndividualResponse {
 
 fn secret_key_request_connection(sensor_ip_address : String){
     let peer_complete_address = format!("{}{}", sensor_ip_address, ":4444");
+    println!("Connecting to: {:?}", peer_complete_address);
     // Connect to Sensor - Regular TCP connection
     match TcpStream::connect(peer_complete_address) {
         Ok(stream) => {
-            println!("Successfully connected to server!");
+            println!("Successfully connected to sensor!");
+            // Send Secret Key request to sensor
             send_secret_key_request(&stream);
+            println!("Secret Key request sent to sensor! Waiting for response...");
+            // Receive Secret Key from sensor
             receive_and_save_secret_key(&stream);
+            println!("Secret Key received from sensor!");
+            // Shutdown connection
             stream.shutdown(std::net::Shutdown::Both).unwrap();
         },
         Err(e) => {
@@ -81,15 +87,19 @@ fn secret_key_request_connection(sensor_ip_address : String){
 
 fn operation_request_and_verification(sensor_ip_address : String, amount : i32){
     // Connect to server - Regular TCP connection
+    println!("Connecting to server...");
     match TcpStream::connect("127.0.0.1:3333") {
         Ok(stream) => {
             println!("Successfully connected to server!");
             // Send operation request
             send_operation_request(&stream, &sensor_ip_address.clone(), amount);
+            println!("Operation request successfully sent to server! Waiting for response...");
             // Receive operation response
             let response = receive_operation_response(&stream);
+            println!("Operation response received from server! Verification needed to decrypt data.");
             stream.shutdown(std::net::Shutdown::Both).unwrap();
             // Randomize, verify and decrypt response
+            println!("Starting verification process...");
             verify_and_decrypt_operation_response(sensor_ip_address.clone(), response);
         },
         Err(e) => {
@@ -100,12 +110,15 @@ fn operation_request_and_verification(sensor_ip_address : String, amount : i32){
 }
 
 fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut response : OperationResponse){
-    // Connect to Sensor - Regular TCP connection
+    // Load sensor's Secret Key
     let secret_key = load_sensor_secret_key(sensor_ip_address.clone());
+    // Connect to Sensor - Regular TCP connection
     let peer_complete_address = format!("{}{}", sensor_ip_address, ":4444");
+    println!("Connecting to: {:?}", peer_complete_address);
     match TcpStream::connect(peer_complete_address) {
         Ok(stream) => {
             println!("Successfully connected to Sensor!");
+            println!("Proceeding to random addition, verification and decrypting data...");
 
             for message in response.ciphertexts.iter_mut(){
                 // Generate random homomorphic sum to ciphertext
@@ -283,9 +296,11 @@ fn receive_and_save_secret_key(stream : &TcpStream){
 }
 
 fn save_sensor_secret_key(stream : &TcpStream, secret_key : LWESecretKey){
-    // Get peer's IP address
+    // Get peer's IP address - Sensor's IP address
     let peer_ip_owned : String = stream.peer_addr().unwrap().ip().to_string().to_owned();
+    // Obtain filename
     let filename = format!("{}{}", peer_ip_owned, "_secret_key.json");
+    // Save sensor's Secret Key
     secret_key.save(&filename);
 }
 
@@ -304,13 +319,17 @@ fn main() {
     let mut amount : i32;
 
     println!("Enter sensor's IP Address: ");
-    std::io::stdin().read_line(&mut sensor_ip_address).unwrap();
+    std::io::stdin().read_line(&mut sensor_ip_address).unwrap(); // Read from keyboard
+    sensor_ip_address.pop(); // Remove last \n from buffer
     println!("Enter amount of measurements to calculate mean value: ");
-    std::io::stdin().read_line(&mut amount_str).unwrap();
-    amount = amount_str.parse().unwrap();
+    std::io::stdin().read_line(&mut amount_str).unwrap(); // Read from keyboard
+    amount_str.pop(); // Remove last \n from buffer
+    amount = amount_str.trim().parse::<i32>().unwrap(); // Parse String into i32
 
     println!("Requesting Sensor's Private Key (SK2)...");
+    // Ask for sensor's Secret Key
     secret_key_request_connection(sensor_ip_address.clone());
     println!("Requesting operation to server...");
+    // Initialize operation request and ciphertext verification
     operation_request_and_verification(sensor_ip_address.clone(), amount);
 }
