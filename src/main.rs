@@ -79,7 +79,7 @@ fn secret_key_request_connection(sensor_ip_address : String){
     println!("Sending thread terminated.");
 }
 
-fn operation_request_connection(sensor_ip_address : String, amount : i32){
+fn operation_request_and_verification(sensor_ip_address : String, amount : i32){
     // Connect to server - Regular TCP connection
     match TcpStream::connect("127.0.0.1:3333") {
         Ok(stream) => {
@@ -88,9 +88,9 @@ fn operation_request_connection(sensor_ip_address : String, amount : i32){
             send_operation_request(&stream, &sensor_ip_address.clone(), amount);
             // Receive operation response
             let response = receive_operation_response(&stream);
+            stream.shutdown(std::net::Shutdown::Both).unwrap();
             // Randomize, verify and decrypt response
             verify_and_decrypt_operation_response(sensor_ip_address.clone(), response);
-            stream.shutdown(std::net::Shutdown::Both).unwrap();
         },
         Err(e) => {
             println!("Failed to connect: {}", e);
@@ -100,24 +100,24 @@ fn operation_request_connection(sensor_ip_address : String, amount : i32){
 }
 
 fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut response : OperationResponse){
-    // Load sensor's Secret Key
-    let sensor_secret_key = load_sensor_secret_key(sensor_ip_address);
-    for message in response.ciphertexts.iter_mut(){
-        let random_vector = random_sum(&mut message.ciphertext);
-
-        println!("\n\nOPERATION RESULTS");
-        println!("From: {:?} -- To: {:?}", message.initial_datetime, message.final_datetime);
-        let result = message.ciphertext.decrypt_decode(&sensor_secret_key).unwrap();
-        println!("Dataa: {:?}", result);
-    }
-}
-
-fn send_ciphertext_to_be_verified(sensor_ip_address : String, ciphertext : VectorLWE){
-    // Connect to server - Regular TCP connection
+    // Connect to Sensor - Regular TCP connection
     let peer_complete_address = format!("{}{}", sensor_ip_address, ":4444");
     match TcpStream::connect(peer_complete_address) {
         Ok(stream) => {
-            println!("Successfully connected to server!");
+            println!("Successfully connected to Sensor!");
+
+            for message in response.ciphertexts.iter_mut(){
+                // Generate random homomorphic sum to ciphertext
+                let random_vector = random_sum(&mut message.ciphertext);
+                send_ciphertext(&stream, message.ciphertext, 5);
+
+                let verified_ciphertext =
+                println!("\n\nOPERATION RESULTS");
+                println!("From: {:?} -- To: {:?}", message.initial_datetime, message.final_datetime);
+                let result = message.ciphertext.decrypt_decode(&sensor_secret_key).unwrap();
+                println!("Data: {:?}", result);
+            }
+
 
         },
         Err(e) => {
@@ -125,13 +125,62 @@ fn send_ciphertext_to_be_verified(sensor_ip_address : String, ciphertext : Vecto
         }
     }
     println!("Sending thread terminated.");
+
+
+
+
+    // Load sensor's Secret Key
+    let sensor_secret_key = load_sensor_secret_key(sensor_ip_address);
+
+}
+
+fn receive_ciphertext(stream : &TcpStream) -> VectorLWE{
+    // RECEIVING MODULE
+    let mut reader = BufReader::new(stream);
+    let mut buffer = Vec::new();
+
+    // _______________ // DUMMY READ - WILL RECEIVE CODE 2
+    buffer.clear();
+    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
+
+    /*    if read_bytes == 0 { // If there is no incoming data
+            return ();
+        }*/
+    // _______________ // END OF DUMMY READ
+
+    buffer.clear();
+    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
+
+    /*    if read_bytes == 0 { // If there is no incoming data
+            return ();
+        }*/
+
+    // Deserialize
+    let ciphertext : ConcreteCiphertext = serde_json::from_slice(&buffer).unwrap();
+    return ciphertext.message;
+}
+
+fn send_ciphertext(mut stream : &TcpStream, ciphertext : VectorLWE, code_in : i32){
+    // Prepare and send Message Code
+    let msg_code = ConcreteMessageCode {
+        code : code_in
+    };
+    stream.write(serde_json::to_string(&msg_code).unwrap().as_bytes()).unwrap();
+    stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
+
+    // Prepare and send ciphertext
+    let ciphertext_msg = ConcreteCiphertext {
+        message : ciphertext
+    };
+    stream.write(serde_json::to_string(&ciphertext_msg).unwrap().as_bytes()).unwrap();
+    stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
 }
 
 fn random_sum(ciphertext : &mut VectorLWE) -> Vec<f64>{
     // Random Addition - Not implemented yes in separate function
     let mut rng = rand::thread_rng();
     // Vector of size 5, with random values between -500 and 500
-    let constants: Vec<f64> = (0..5).map(|_| rng.gen_range(-100., 800.)).collect();
+    let constants: Vec<f64> = (0..3).map(|_| rng.gen_range(-100., 800.)).collect();
     // Execute homomorphic addition
     ciphertext.add_constant_dynamic_encoder(&constants).unwrap();
     return constants;
@@ -245,5 +294,5 @@ fn main() {
     println!("Requesting Sensor's Private Key (SK2)...");
     secret_key_request_connection(sensor_ip_address.clone());
     println!("Requesting operation to server...");
-    operation_request_connection(sensor_ip_address.clone(), amount);
+    operation_request_and_verification(sensor_ip_address.clone(), amount);
 }
