@@ -102,17 +102,17 @@ fn receive_operation_response(stream : &TcpStream) -> OperationResponse{
     buffer.clear();
     let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
 
-    if read_bytes == 0 { // If there is no incoming data
+/*    if read_bytes == 0 { // If there is no incoming data
         return ();
-    }
+    }*/
     // _______________ // END OF DUMMY READ
 
     buffer.clear();
     let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
 
-    if read_bytes == 0 { // If there is no incoming data
+/*    if read_bytes == 0 { // If there is no incoming data
         return ();
-    }
+    }*/
 
     // Deserialize
     let operation_response : OperationResponse = serde_json::from_slice(&buffer).unwrap();
