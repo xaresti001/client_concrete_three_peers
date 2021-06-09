@@ -70,6 +70,7 @@ fn secret_key_request_connection(sensor_ip_address : String){
             println!("Successfully connected to server!");
             send_secret_key_request(&stream);
             receive_and_save_secret_key(&stream);
+            stream.shutdown(std::net::Shutdown::Both).unwrap();
         },
         Err(e) => {
             println!("Failed to connect: {}", e);
@@ -83,14 +84,57 @@ fn operation_request_connection(sensor_ip_address : String, amount : i32){
     match TcpStream::connect("127.0.0.1:3333") {
         Ok(stream) => {
             println!("Successfully connected to server!");
-            send_operation_request(&stream, sensor_ip_address, amount);
-            receive_operation_response(&stream);
+            // Send operation request
+            send_operation_request(&stream, &sensor_ip_address.clone(), amount);
+            // Receive operation response
+            let response = receive_operation_response(&stream);
+            // Randomize, verify and decrypt response
+            verify_and_decrypt_operation_response(sensor_ip_address.clone(), response);
+            stream.shutdown(std::net::Shutdown::Both).unwrap();
         },
         Err(e) => {
             println!("Failed to connect: {}", e);
         }
     }
     println!("Sending thread terminated.");
+}
+
+fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut response : OperationResponse){
+    // Load sensor's Secret Key
+    let sensor_secret_key = load_sensor_secret_key(sensor_ip_address);
+    for message in response.ciphertexts.iter_mut(){
+        let random_vector = random_sum(&mut message.ciphertext);
+
+        println!("\n\nOPERATION RESULTS");
+        println!("From: {:?} -- To: {:?}", message.initial_datetime, message.final_datetime);
+        let result = message.ciphertext.decrypt_decode(&sensor_secret_key).unwrap();
+        println!("Dataa: {:?}", result);
+    }
+}
+
+fn send_ciphertext_to_be_verified(sensor_ip_address : String, ciphertext : VectorLWE){
+    // Connect to server - Regular TCP connection
+    let peer_complete_address = format!("{}{}", sensor_ip_address, ":4444");
+    match TcpStream::connect(peer_complete_address) {
+        Ok(stream) => {
+            println!("Successfully connected to server!");
+
+        },
+        Err(e) => {
+            println!("Failed to connect: {}", e);
+        }
+    }
+    println!("Sending thread terminated.");
+}
+
+fn random_sum(ciphertext : &mut VectorLWE) -> Vec<f64>{
+    // Random Addition - Not implemented yes in separate function
+    let mut rng = rand::thread_rng();
+    // Vector of size 5, with random values between -500 and 500
+    let constants: Vec<f64> = (0..5).map(|_| rng.gen_range(-100., 800.)).collect();
+    // Execute homomorphic addition
+    ciphertext.add_constant_dynamic_encoder(&constants).unwrap();
+    return constants;
 }
 
 fn receive_operation_response(stream : &TcpStream) -> OperationResponse{
@@ -128,7 +172,7 @@ fn send_secret_key_request(mut stream : &TcpStream){
     stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
 }
 
-fn send_operation_request(mut stream : &TcpStream, sensor_ip : String, amount : i32){
+fn send_operation_request(mut stream : &TcpStream, sensor_ip : &String, amount : i32){
     // Prepare and send Message Code
     let msg_code = ConcreteMessageCode {
         code : 1 // Code for Operation Request
@@ -138,7 +182,7 @@ fn send_operation_request(mut stream : &TcpStream, sensor_ip : String, amount : 
 
     // Prepare and send Operation Request
     let request = OperationRequest{
-        sensor_ip,
+        sensor_ip : sensor_ip.to_string(),
         ciphertext_amount : amount
     };
     stream.write(serde_json::to_string(&request).unwrap().as_bytes()).unwrap();
@@ -178,6 +222,12 @@ fn save_sensor_secret_key(stream : &TcpStream, secret_key : LWESecretKey){
     secret_key.save(&filename);
 }
 
+fn load_sensor_secret_key(sensor_ip_address : String) -> LWESecretKey{
+    let filename = format!("{}{}", sensor_ip_address, "_secret_key.json");
+    let secret_key = LWESecretKey::load(&filename).unwrap();
+    return secret_key;
+}
+
 // Client device will ask for sensor's IP address and the amount of measurements to calculate mean value.
 // Then, the device will ask the server for information. Will receive a Struct with a response-vector in it.
 // In order to decrypt the information, the original sensor needs to make the first decryption to the ciphertexts.
@@ -192,8 +242,8 @@ fn main() {
     std::io::stdin().read_line(&mut amount_str).unwrap();
     amount = amount_str.parse().unwrap();
 
-    // secret_key_request_connection();
-    // operation_request_connection();
-    // verification_connection();
-    // display_information();
+    println!("Requesting Sensor's Private Key (SK2)...");
+    secret_key_request_connection(sensor_ip_address.clone());
+    println!("Requesting operation to server...");
+    operation_request_connection(sensor_ip_address.clone(), amount);
 }
