@@ -119,6 +119,7 @@ fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut respons
         Ok(stream) => {
             println!("Successfully connected to Sensor!");
             println!("Proceeding to random addition, verification and decrypting data...");
+            println!("\n\n--- OPERATION RESULTS ---");
 
             for message in response.ciphertexts.iter_mut(){
                 // Generate random homomorphic sum to ciphertext
@@ -127,11 +128,10 @@ fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut respons
                 send_ciphertext(&stream, message.ciphertext.clone(), 5);
                 // Receive verified ciphertext from sensor
                 let verified_ciphertext = receive_ciphertext(&stream);
-
+                // Undo random addition and decrypt ciphertext
                 let data = decrypt_verified_ciphertext(&secret_key, &verified_ciphertext, &random_vector);
-
-                println!("\n\nOPERATION RESULTS");
-                println!("From: {:?} -- To: {:?}", message.initial_datetime, message.final_datetime);
+                // Printing the results
+                println!("\nFrom: {:?} -- To: {:?}", message.initial_datetime, message.final_datetime);
                 println!("Data: {:?}", data);
             }
 
