@@ -44,8 +44,8 @@ struct ConcreteKSK {
 // Operation request
 #[derive(Serialize, Deserialize, Debug)]
 struct OperationRequest {
-    sensor_ip : String,
-    ciphertext_amount : i32
+    ciphertext_amount : i32,
+    sensor_ip : String
 }
 
 // Operation response
@@ -92,7 +92,7 @@ fn operation_request_and_verification(sensor_ip_address : String, amount : i32){
         Ok(stream) => {
             println!("Successfully connected to server!");
             // Send operation request
-            send_operation_request(&stream, &sensor_ip_address.clone(), amount);
+            send_operation_request(&stream, sensor_ip_address.clone(), amount);
             println!("Operation request successfully sent to server! Waiting for response...");
             // Receive operation response
             let response = receive_operation_response(&stream);
@@ -252,7 +252,7 @@ fn send_secret_key_request(mut stream : &TcpStream){
     stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
 }
 
-fn send_operation_request(mut stream : &TcpStream, sensor_ip : &String, amount : i32){
+fn send_operation_request(mut stream : &TcpStream, sensor_ip : String, amount : i32){
     // Prepare and send Message Code
     let msg_code = ConcreteMessageCode {
         code : 1 // Code for Operation Request
@@ -262,9 +262,10 @@ fn send_operation_request(mut stream : &TcpStream, sensor_ip : &String, amount :
 
     // Prepare and send Operation Request
     let request = OperationRequest{
-        sensor_ip : sensor_ip.to_string(),
+        sensor_ip : sensor_ip,
         ciphertext_amount : amount
     };
+    println!("{}{:?}", request.sensor_ip, request.ciphertext_amount);
     stream.write(serde_json::to_string(&request).unwrap().as_bytes()).unwrap();
     stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
 }
@@ -291,8 +292,8 @@ fn receive_and_save_secret_key(stream : &TcpStream){
     }
 
     // Deserialize
-    let secret_key : LWESecretKey = serde_json::from_slice(&buffer).unwrap();
-    save_sensor_secret_key(stream, secret_key);
+    let secret_key : ConcreteSecretKey = serde_json::from_slice(&buffer).unwrap();
+    save_sensor_secret_key(stream, secret_key.secret_key);
 }
 
 fn save_sensor_secret_key(stream : &TcpStream, secret_key : LWESecretKey){
@@ -328,7 +329,7 @@ fn main() {
 
     println!("Requesting Sensor's Private Key (SK2)...");
     // Ask for sensor's Secret Key
-    secret_key_request_connection(sensor_ip_address.clone());
+    // secret_key_request_connection(sensor_ip_address.clone());
     println!("Requesting operation to server...");
     // Initialize operation request and ciphertext verification
     operation_request_and_verification(sensor_ip_address.clone(), amount);
