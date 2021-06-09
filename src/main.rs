@@ -101,6 +101,7 @@ fn operation_request_and_verification(sensor_ip_address : String, amount : i32){
 
 fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut response : OperationResponse){
     // Connect to Sensor - Regular TCP connection
+    let secret_key = load_sensor_secret_key(sensor_ip_address.clone());
     let peer_complete_address = format!("{}{}", sensor_ip_address, ":4444");
     match TcpStream::connect(peer_complete_address) {
         Ok(stream) => {
@@ -109,13 +110,16 @@ fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut respons
             for message in response.ciphertexts.iter_mut(){
                 // Generate random homomorphic sum to ciphertext
                 let random_vector = random_sum(&mut message.ciphertext);
-                send_ciphertext(&stream, message.ciphertext, 5);
+                // Send randomized ciphertext to sensor
+                send_ciphertext(&stream, message.ciphertext.clone(), 5);
+                // Receive verified ciphertext from sensor
+                let verified_ciphertext = receive_ciphertext(&stream);
 
-                let verified_ciphertext =
+                let data = decrypt_verified_ciphertext(&secret_key, &verified_ciphertext, &random_vector);
+
                 println!("\n\nOPERATION RESULTS");
                 println!("From: {:?} -- To: {:?}", message.initial_datetime, message.final_datetime);
-                let result = message.ciphertext.decrypt_decode(&sensor_secret_key).unwrap();
-                println!("Data: {:?}", result);
+                println!("Data: {:?}", data);
             }
 
 
@@ -132,6 +136,20 @@ fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut respons
     // Load sensor's Secret Key
     let sensor_secret_key = load_sensor_secret_key(sensor_ip_address);
 
+}
+
+fn decrypt_verified_ciphertext(secret_key : &LWESecretKey, verified_ciphertext : &VectorLWE, random_vector : &Vec<f64>) -> Vec<f64>{
+    // Negate randomized vector
+    let temp_array = Array::from_vec(random_vector.to_vec());
+    let constant : f64 = -1.0;
+    let result = temp_array * constant;
+    let random_vector_final = result.to_vec();
+
+    // Undo randomized changes to ciphertext -> Obtain valid ciphertext
+    verified_ciphertext.add_constant_dynamic_encoder(&random_vector_final).unwrap();
+    // Decrypt and decode ciphertext
+    let decrypted = verified_ciphertext.decrypt_decode(&secret_key).unwrap();
+    return decrypted;
 }
 
 fn receive_ciphertext(stream : &TcpStream) -> VectorLWE{
