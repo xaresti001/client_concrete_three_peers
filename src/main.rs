@@ -167,27 +167,12 @@ fn decrypt_verified_ciphertext(secret_key : &LWESecretKey, verified_ciphertext :
 
 fn receive_ciphertext(stream : &TcpStream) -> VectorLWE{
     // RECEIVING MODULE
-    let mut reader = BufReader::new(stream);
-    let mut buffer = Vec::new();
+    let mut de = serde_json::Deserializer::from_reader(stream);
+    let msg_code : ConcreteMessageCode = ConcreteMessageCode::deserialize(&mut de).unwrap();
 
-    // _______________ // DUMMY READ - WILL RECEIVE CODE 2
-    buffer.clear();
-    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
-
-    /*    if read_bytes == 0 { // If there is no incoming data
-            return ();
-        }*/
-    // _______________ // END OF DUMMY READ
-
-    buffer.clear();
-    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
-
-    /*    if read_bytes == 0 { // If there is no incoming data
-            return ();
-        }*/
-
-    // Deserialize
-    let ciphertext : ConcreteCiphertext = serde_json::from_slice(&buffer).unwrap();
+    // RECEIVING MODULE
+    let mut de = serde_json::Deserializer::from_reader(stream);
+    let ciphertext : ConcreteCiphertext = ConcreteCiphertext::deserialize(&mut de).unwrap();
     return ciphertext.message;
 }
 
@@ -196,15 +181,13 @@ fn send_ciphertext(mut stream : &TcpStream, ciphertext : VectorLWE, code_in : i3
     let msg_code = ConcreteMessageCode {
         code : code_in
     };
-    stream.write(serde_json::to_string(&msg_code).unwrap().as_bytes()).unwrap();
-    stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
+    stream.write(&serde_json::to_vec(&msg_code).unwrap()).unwrap();
 
     // Prepare and send ciphertext
     let ciphertext_msg = ConcreteCiphertext {
         message : ciphertext
     };
-    stream.write(serde_json::to_string(&ciphertext_msg).unwrap().as_bytes()).unwrap();
-    stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
+    stream.write(&serde_json::to_vec(&ciphertext_msg).unwrap()).unwrap();
 }
 
 fn random_sum(ciphertext : &mut VectorLWE) -> Vec<f64>{
@@ -218,28 +201,13 @@ fn random_sum(ciphertext : &mut VectorLWE) -> Vec<f64>{
 }
 
 fn receive_operation_response(stream : &TcpStream) -> OperationResponse{
+    // RECEIVING MODULE - Dummy read - Will receive code 2
+    let mut de = serde_json::Deserializer::from_reader(stream);
+    let msg_code : ConcreteMessageCode = ConcreteMessageCode::deserialize(&mut de).unwrap();
+
     // RECEIVING MODULE
-    let mut reader = BufReader::new(stream);
-    let mut buffer = Vec::new();
-
-    // _______________ // DUMMY READ - WILL RECEIVE CODE 2
-    buffer.clear();
-    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
-
-/*    if read_bytes == 0 { // If there is no incoming data
-        return ();
-    }*/
-    // _______________ // END OF DUMMY READ
-
-    buffer.clear();
-    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
-
-/*    if read_bytes == 0 { // If there is no incoming data
-        return ();
-    }*/
-
-    // Deserialize
-    let operation_response : OperationResponse = serde_json::from_slice(&buffer).unwrap();
+    let mut de = serde_json::Deserializer::from_reader(stream);
+    let operation_response : OperationResponse = OperationResponse::deserialize(&mut de).unwrap();
     return operation_response;
 }
 
@@ -248,8 +216,7 @@ fn send_secret_key_request(mut stream : &TcpStream){
     let msg_code = ConcreteMessageCode {
         code : 3 // Code for Secret Key Request
     };
-    stream.write(serde_json::to_string(&msg_code).unwrap().as_bytes()).unwrap();
-    stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
+    stream.write(&serde_json::to_vec(&msg_code).unwrap()).unwrap();
 }
 
 fn send_operation_request(mut stream : &TcpStream, sensor_ip : String, amount : i32){
@@ -257,42 +224,25 @@ fn send_operation_request(mut stream : &TcpStream, sensor_ip : String, amount : 
     let msg_code = ConcreteMessageCode {
         code : 1 // Code for Operation Request
     };
-    stream.write(serde_json::to_string(&msg_code).unwrap().as_bytes()).unwrap();
-    stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
+    stream.write(&serde_json::to_vec(&msg_code).unwrap()).unwrap();
 
     // Prepare and send Operation Request
     let request = OperationRequest{
-        sensor_ip : sensor_ip,
+        sensor_ip,
         ciphertext_amount : amount
     };
     println!("{}{:?}", request.sensor_ip, request.ciphertext_amount);
-    stream.write(serde_json::to_string(&request).unwrap().as_bytes()).unwrap();
-    stream.write(b"\n").unwrap(); // Necessary in order to Stop reading or receiving data from
+    stream.write(&serde_json::to_vec(&request).unwrap()).unwrap();
 }
 
 fn receive_and_save_secret_key(stream : &TcpStream){
+    // RECEIVING MODULE - Dummy read - Will receive code 4
+    let mut de = serde_json::Deserializer::from_reader(stream);
+    let msg_code : ConcreteMessageCode = ConcreteMessageCode::deserialize(&mut de).unwrap();
+
     // RECEIVING MODULE
-    let mut reader = BufReader::new(stream);
-    let mut buffer = Vec::new();
-
-    // _______________ // DUMMY READ - WILL RECEIVE CODE 4
-    buffer.clear();
-    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
-
-    if read_bytes == 0 { // If there is no incoming data
-        return ();
-    }
-    // _______________ // END OF DUMMY READ
-
-    buffer.clear();
-    let read_bytes = reader.read_until(b'\n', &mut buffer).unwrap();
-
-    if read_bytes == 0 { // If there is no incoming data
-        return ();
-    }
-
-    // Deserialize
-    let secret_key : ConcreteSecretKey = serde_json::from_slice(&buffer).unwrap();
+    let mut de = serde_json::Deserializer::from_reader(stream);
+    let secret_key : ConcreteSecretKey = ConcreteSecretKey::deserialize(&mut de).unwrap();
     save_sensor_secret_key(stream, secret_key.secret_key);
 }
 
