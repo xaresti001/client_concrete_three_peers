@@ -127,15 +127,14 @@ fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut respons
                 // Send randomized ciphertext to sensor
                 send_ciphertext(&stream, message.ciphertext.clone(), 5);
                 // Receive verified ciphertext from sensor
-                let verified_ciphertext = receive_ciphertext(&stream);
+                let mut verified_ciphertext = receive_ciphertext(&stream);
                 // Undo random addition and decrypt ciphertext
-                let data = decrypt_verified_ciphertext(&secret_key, &verified_ciphertext, &random_vector);
+                let data = decrypt_verified_ciphertext(&secret_key, &mut verified_ciphertext, &random_vector);
                 // Printing the results
                 println!("\nFrom: {:?} -- To: {:?}", message.initial_datetime, message.final_datetime);
                 println!("Data: {:?}", data);
             }
-
-
+            stream.shutdown(Shutdown::Both).expect("shutdown call failed");
         },
         Err(e) => {
             println!("Failed to connect: {}", e);
@@ -151,7 +150,7 @@ fn verify_and_decrypt_operation_response(sensor_ip_address : String, mut respons
 
 }
 
-fn decrypt_verified_ciphertext(secret_key : &LWESecretKey, verified_ciphertext : &VectorLWE, random_vector : &Vec<f64>) -> Vec<f64>{
+fn decrypt_verified_ciphertext(secret_key : &LWESecretKey, verified_ciphertext : &mut VectorLWE, random_vector : &Vec<f64>) -> Vec<f64>{
     // Negate randomized vector
     let temp_array = Array::from_vec(random_vector.to_vec());
     let constant : f64 = -1.0;
@@ -159,7 +158,7 @@ fn decrypt_verified_ciphertext(secret_key : &LWESecretKey, verified_ciphertext :
     let random_vector_final = result.to_vec();
 
     // Undo randomized changes to ciphertext -> Obtain valid ciphertext
-    verified_ciphertext.add_constant_dynamic_encoder(&random_vector_final).unwrap();
+    verified_ciphertext.add_constant_dynamic_encoder_inplace(&random_vector_final).unwrap();
     // Decrypt and decode ciphertext
     let decrypted = verified_ciphertext.decrypt_decode(&secret_key).unwrap();
     return decrypted;
@@ -194,9 +193,9 @@ fn random_sum(ciphertext : &mut VectorLWE) -> Vec<f64>{
     // Random Addition - Not implemented yes in separate function
     let mut rng = rand::thread_rng();
     // Vector of size 5, with random values between -500 and 500
-    let constants: Vec<f64> = (0..3).map(|_| rng.gen_range(-100., 800.)).collect();
+    let constants: Vec<f64> = (0..3).map(|_| rng.gen_range(0., 500.)).collect();
     // Execute homomorphic addition
-    ciphertext.add_constant_dynamic_encoder(&constants).unwrap();
+    ciphertext.add_constant_dynamic_encoder_inplace(&constants).unwrap();
     return constants;
 }
 
@@ -279,7 +278,7 @@ fn main() {
 
     println!("Requesting Sensor's Private Key (SK2)...");
     // Ask for sensor's Secret Key
-    // secret_key_request_connection(sensor_ip_address.clone());
+    secret_key_request_connection(sensor_ip_address.clone());
     println!("Requesting operation to server...");
     // Initialize operation request and ciphertext verification
     operation_request_and_verification(sensor_ip_address.clone(), amount);
